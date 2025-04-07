@@ -4,7 +4,7 @@ import { OpenAI } from 'openai';
 // Initialize OpenAI client
 const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.ROUTER_API_KEY || '',
+  apiKey: process.env.OPENROUTER_API_KEY || process.env.ROUTER_API_KEY || '',
   defaultHeaders: {
     "HTTP-Referer": "https://solvex-ai.vercel.app/",
     "X-Title": "Solvex AI"
@@ -35,12 +35,13 @@ export default async function handler(
   }
 
   try {
-    // Check API key
-    if (!process.env.ROUTER_API_KEY) {
-      console.error('API key not found in environment variables');
+    // Check API key with better error message
+    const apiKey = process.env.OPENROUTER_API_KEY || process.env.ROUTER_API_KEY;
+    if (!apiKey) {
+      console.error('API key not found in environment variables. Please set OPENROUTER_API_KEY or ROUTER_API_KEY');
       return response.status(500).json({
         error: 'Server configuration error',
-        details: 'API key not configured'
+        details: 'API key not configured. Please check server environment variables.'
       });
     }
 
