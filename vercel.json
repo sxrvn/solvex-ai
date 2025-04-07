@@ -1,4 +1,5 @@
 {
+  "version": 2,
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
@@ -8,9 +9,11 @@
       "dest": "/api/$1"
     },
     {
+      "handle": "filesystem"
+    },
+    {
       "src": "/[^.]+",
-      "dest": "/",
-      "status": 200
+      "dest": "/index.html"
     }
   ]
 } 

@@ -76,24 +76,16 @@ function App() {
             })
           });
 
-          if (response.status === 429) {
-            retries++;
-            if (retries < maxRetries) {
-              await sleep(1000 * retries);
-              continue;
-            } else {
-              throw new Error("Rate limit exceeded. Please try again later.");
-            }
-          }
+          const data = await response.json();
 
           if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            throw new Error(data.error || data.details || `HTTP error! status: ${response.status}`);
           }
 
-          responseData = await response.json();
+          responseData = data;
           success = true;
         } catch (retryError) {
+          console.error('Retry error:', retryError);
           if (retries >= maxRetries - 1) throw retryError;
           retries++;
           await sleep(1000 * retries);
@@ -107,12 +99,14 @@ function App() {
       console.error('Error:', error);
       if (error instanceof Error) {
         if (error.message.includes('429') || error.message.includes('Rate limit')) {
-          setError('Too many requests. Please wait a moment before trying again or reload the page.');
+          setError('Too many requests. Please wait a moment before trying again.');
+        } else if (error.message.includes('API key not configured')) {
+          setError('Server configuration error. Please contact support.');
         } else {
-          setError(`Failed to process your request: ${error.message}`);
+          setError(`Error: ${error.message}`);
         }
       } else {
-        setError('Failed to process your request. Please try again later.');
+        setError('An unexpected error occurred. Please try again later.');
       }
     } finally {
       setLoading(false);
