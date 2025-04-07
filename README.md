@@ -55,11 +55,20 @@ The following environment variables are required:
 
 - `VITE_ROUTER_API_KEY`: Your API key for the AI service
 
-## Deployment
+## Deployment to Vercel
 
-This project is configured for deployment on Vercel. Simply connect your GitHub repository to Vercel and it will automatically deploy your application.
+This project is configured for deployment on Vercel. The setup includes a serverless API function to handle CORS issues.
 
-Make sure to add the required environment variables in your Vercel project settings.
+### Steps for Vercel Deployment:
+
+1. Push your code to a GitHub repository
+2. Go to Vercel and connect your repository
+3. In the environment variables section, add:
+   - Name: `VITE_ROUTER_API_KEY` 
+   - Value: Your API key
+4. Deploy your application
+
+The application uses a serverless function to proxy API requests and avoid CORS issues. No additional configuration is needed as the `vercel.json` file is already set up correctly.
 
 ## License
 

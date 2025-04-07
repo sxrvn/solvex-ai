@@ -47,39 +47,57 @@ function App() {
     setError(null);
     
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-pro-exp-03-25",
-          messages: [{
-            role: "user",
-            content: image ? [
-              { type: "text", text: question },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${image}`
-                }
-              }
-            ] : question
-          }]
-        })
-      });
+      const maxRetries = 3;
+      let retries = 0;
+      let success = false;
+      let responseData;
+      
+      while (retries < maxRetries && !success) {
+        try {
+          // Using a relative URL to call our own API endpoint instead of directly calling the external API
+          const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              question,
+              image: image || null
+            })
+          });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+          if (response.status === 429) {
+            retries++;
+            if (retries < maxRetries) {
+              // Wait longer between each retry
+              await sleep(1000 * retries);
+              continue;
+            } else {
+              throw new Error("Rate limit exceeded. Please try again later.");
+            }
+          }
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          responseData = await response.json();
+          success = true;
+        } catch (retryError) {
+          if (retries >= maxRetries - 1) throw retryError;
+          retries++;
+          await sleep(1000 * retries);
+        }
       }
 
-      const responseData = await response.json();
-      setAnswer(responseData.choices[0].message.content);
+      if (success && responseData) {
+        setAnswer(responseData.content);
+      }
     } catch (error) {
       console.error('Error:', error);
       if (error instanceof Error) {
         if (error.message.includes('429') || error.message.includes('Rate limit')) {
-          setError('Too many requests. Please wait a moment before trying again or reload the page.');
+          setError('Too many requests. Please wait a moment before trying again.');
         } else {
           setError(`Failed to process your request: ${error.message}`);
         }
