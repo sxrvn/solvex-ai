@@ -54,6 +54,7 @@ function App() {
       
       while (retries < maxRetries && !success) {
         try {
+          console.log('Attempting API request...');
           const response = await fetch('/api/chat', {
             method: 'POST',
             headers: {
@@ -77,31 +78,39 @@ function App() {
           });
 
           const data = await response.json();
+          console.log('API Response:', { status: response.status, data });
 
           if (!response.ok) {
-            throw new Error(data.error || data.details || `HTTP error! status: ${response.status}`);
+            const errorMessage = data.details || data.error || `HTTP error! status: ${response.status}`;
+            throw new Error(errorMessage);
           }
 
           responseData = data;
           success = true;
         } catch (retryError) {
-          console.error('Retry error:', retryError);
+          console.error('Request failed:', retryError);
           if (retries >= maxRetries - 1) throw retryError;
           retries++;
+          console.log(`Retrying... Attempt ${retries + 1} of ${maxRetries}`);
           await sleep(1000 * retries);
         }
       }
 
       if (success && responseData) {
+        if (!responseData.choices?.[0]?.message?.content) {
+          throw new Error('Invalid response format from API');
+        }
         setAnswer(responseData.choices[0].message.content);
       }
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Final error:', error);
       if (error instanceof Error) {
-        if (error.message.includes('429') || error.message.includes('Rate limit')) {
+        if (error.message.includes('API key not configured')) {
+          setError('The service is temporarily unavailable. Please try again later or contact support.');
+        } else if (error.message.includes('429') || error.message.includes('Rate limit')) {
           setError('Too many requests. Please wait a moment before trying again.');
-        } else if (error.message.includes('API key not configured')) {
-          setError('Server configuration error. Please contact support.');
+        } else if (error.message.includes('Invalid response format')) {
+          setError('Received an invalid response from the server. Please try again.');
         } else {
           setError(`Error: ${error.message}`);
         }

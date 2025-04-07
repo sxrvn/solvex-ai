@@ -24,15 +24,24 @@ export default async function handler(
   }
 
   try {
-    if (!process.env.VITE_ROUTER_API_KEY) {
-      throw new Error('API key not configured');
+    // Check for API key in different environment variable names
+    const apiKey = process.env.ROUTER_API_KEY || process.env.VITE_ROUTER_API_KEY;
+    
+    if (!apiKey) {
+      console.error('API key not found in environment variables');
+      return response.status(500).json({
+        error: 'Server configuration error',
+        details: 'API key not configured'
+      });
     }
 
+    console.log('Making request to router.requesty.ai...');
+    
     const apiResponse = await fetch('https://router.requesty.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.VITE_ROUTER_API_KEY}`
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify(request.body)
     });
@@ -40,16 +49,26 @@ export default async function handler(
     const data = await apiResponse.json();
 
     if (!apiResponse.ok) {
-      console.error('API Error Response:', data);
-      throw new Error(data.error?.message || `API request failed with status ${apiResponse.status}`);
+      console.error('API Error Response:', {
+        status: apiResponse.status,
+        data: data
+      });
+      
+      return response.status(apiResponse.status).json({
+        error: 'API request failed',
+        details: data.error?.message || `Status ${apiResponse.status}`,
+        status: apiResponse.status
+      });
     }
 
     return response.status(200).json(data);
   } catch (error) {
-    console.error('API Error:', error);
+    console.error('Server Error:', error);
+    
     return response.status(500).json({
       error: 'Failed to process request',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
+      type: error instanceof Error ? error.name : 'Unknown'
     });
   }
 } 
