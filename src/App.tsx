@@ -327,35 +327,30 @@ function App() {
                         background-color: #f9fafb;
                         font-weight: 600;
                       }
-                      /* Import Computer Modern font for LaTeX-like appearance */
                       @font-face {
                         font-family: 'Computer Modern';
-                        src: url('https://cdn.jsdelivr.net/npm/computer-modern@0.1.2/Serif/cmunrm.woff') format('woff');
+                        src: url('https://cdn.rawgit.com/dreampulse/computer-modern-web-font/master/fonts/Serif/cmunrm.woff') format('woff');
                         font-weight: normal;
                         font-style: normal;
+                        font-display: swap;
                       }
                       @font-face {
                         font-family: 'Computer Modern';
-                        src: url('https://cdn.jsdelivr.net/npm/computer-modern@0.1.2/Serif/cmunbx.woff') format('woff');
+                        src: url('https://cdn.rawgit.com/dreampulse/computer-modern-web-font/master/fonts/Serif/cmunbx.woff') format('woff');
                         font-weight: bold;
                         font-style: normal;
+                        font-display: swap;
                       }
                       @font-face {
                         font-family: 'Computer Modern';
-                        src: url('https://cdn.jsdelivr.net/npm/computer-modern@0.1.2/Serif/cmunti.woff') format('woff');
+                        src: url('https://cdn.rawgit.com/dreampulse/computer-modern-web-font/master/fonts/Serif/cmunti.woff') format('woff');
                         font-weight: normal;
                         font-style: italic;
+                        font-display: swap;
                       }
-                      /* Math-specific styling */
-                      .katex-display > .katex {
-                        max-width: 100%;
-                        overflow-x: auto;
-                        overflow-y: hidden;
-                        padding: 0.5em 0;
-                      }
-                      /* Better spacing for inline math */
-                      .katex-inline {
-                        padding: 0 0.15em;
+                      /* Fallback font while loading */
+                      .latex-wrapper {
+                        font-family: 'Computer Modern', 'Times New Roman', serif;
                       }
                     `}</style>
                     <ReactMarkdown

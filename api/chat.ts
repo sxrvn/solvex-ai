@@ -37,33 +37,61 @@ export default async function handler(
 
     console.log('Making request to router.requesty.ai...');
     
-    const apiResponse = await fetch('https://router.requesty.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(request.body)
-    });
+    // Create an AbortController for timeout
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-    const data = await apiResponse.json();
+    try {
+      const apiResponse = await fetch('https://router.requesty.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(request.body),
+        signal: controller.signal
+      });
 
-    if (!apiResponse.ok) {
-      console.error('API Error Response:', {
-        status: apiResponse.status,
-        data: data
-      });
-      
-      return response.status(apiResponse.status).json({
-        error: 'API request failed',
-        details: data.error?.message || `Status ${apiResponse.status}`,
-        status: apiResponse.status
-      });
+      clearTimeout(timeout);
+
+      const data = await apiResponse.json();
+
+      if (!apiResponse.ok) {
+        console.error('API Error Response:', {
+          status: apiResponse.status,
+          data: data
+        });
+        
+        // Handle rate limiting specifically
+        if (apiResponse.status === 429) {
+          return response.status(429).json({
+            error: 'Rate limit exceeded',
+            details: 'Please wait a moment before trying again',
+            retryAfter: apiResponse.headers.get('retry-after') || '30'
+          });
+        }
+        
+        return response.status(apiResponse.status).json({
+          error: 'API request failed',
+          details: data.error?.message || `Status ${apiResponse.status}`,
+          status: apiResponse.status
+        });
+      }
+
+      return response.status(200).json(data);
+    } catch (fetchError) {
+      clearTimeout(timeout);
+      throw fetchError;
     }
-
-    return response.status(200).json(data);
   } catch (error) {
     console.error('Server Error:', error);
+    
+    if (error.name === 'AbortError') {
+      return response.status(504).json({
+        error: 'Request timeout',
+        details: 'The request took too long to complete'
+      });
+    }
     
     return response.status(500).json({
       error: 'Failed to process request',
