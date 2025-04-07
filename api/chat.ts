@@ -1,34 +1,64 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Rate limiting configuration
-const RATE_LIMIT_WINDOW = 60000; // 1 minute in milliseconds
-const MAX_REQUESTS_PER_WINDOW = 5;
-const requestCounts = new Map<string, { count: number; timestamp: number }>();
+// In-memory rate limiting store - this will reset on serverless function cold starts
+// but provides some protection during active usage periods
+interface RateLimitRecord {
+  count: number;
+  resetAt: number;
+}
+let rateLimitStore: Record<string, RateLimitRecord> = {};
 
-function getRateLimitInfo(ip: string): { isLimited: boolean; retryAfter: number } {
+// Rate limit configuration
+const RATE_LIMIT = {
+  requestsPerMinute: 5,
+  windowMs: 60 * 1000, // 1 minute
+  penaltyMultiplier: 2, // each successive violation doubles the wait time
+};
+
+// Simple rate limiting function
+function isRateLimited(ip: string): { limited: boolean; retryAfter: number } {
   const now = Date.now();
-  const windowData = requestCounts.get(ip);
-
-  if (!windowData) {
-    requestCounts.set(ip, { count: 1, timestamp: now });
-    return { isLimited: false, retryAfter: 0 };
+  
+  // Clean up expired entries
+  Object.keys(rateLimitStore).forEach(key => {
+    if (rateLimitStore[key].resetAt < now) {
+      delete rateLimitStore[key];
+    }
+  });
+  
+  // Get or create record for this IP
+  if (!rateLimitStore[ip]) {
+    rateLimitStore[ip] = {
+      count: 0,
+      resetAt: now + RATE_LIMIT.windowMs
+    };
   }
-
-  if (now - windowData.timestamp > RATE_LIMIT_WINDOW) {
-    // Reset window if it's expired
-    requestCounts.set(ip, { count: 1, timestamp: now });
-    return { isLimited: false, retryAfter: 0 };
+  
+  const record = rateLimitStore[ip];
+  
+  // If the reset time has passed, reset the counter
+  if (record.resetAt < now) {
+    record.count = 0;
+    record.resetAt = now + RATE_LIMIT.windowMs;
   }
-
-  if (windowData.count >= MAX_REQUESTS_PER_WINDOW) {
-    const retryAfter = Math.ceil((RATE_LIMIT_WINDOW - (now - windowData.timestamp)) / 1000);
-    return { isLimited: true, retryAfter };
+  
+  // Increment the counter
+  record.count++;
+  
+  // Check if rate limited
+  if (record.count > RATE_LIMIT.requestsPerMinute) {
+    // Calculate penalty time based on how many times they've exceeded the limit
+    const penaltyFactor = Math.min(Math.pow(RATE_LIMIT.penaltyMultiplier, 
+      record.count - RATE_LIMIT.requestsPerMinute - 1), 16); // Cap at 16x penalty
+    
+    const penaltyTimeMs = RATE_LIMIT.windowMs * penaltyFactor;
+    record.resetAt = now + penaltyTimeMs;
+    
+    const retryAfter = Math.ceil(penaltyTimeMs / 1000);
+    return { limited: true, retryAfter };
   }
-
-  // Increment request count
-  windowData.count += 1;
-  requestCounts.set(ip, windowData);
-  return { isLimited: false, retryAfter: 0 };
+  
+  return { limited: false, retryAfter: 0 };
 }
 
 export default async function handler(
@@ -54,20 +84,25 @@ export default async function handler(
     return response.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Check rate limit
-  const clientIp = request.headers['x-forwarded-for'] as string || 'unknown';
-  const { isLimited, retryAfter } = getRateLimitInfo(clientIp);
-  
-  if (isLimited) {
-    response.setHeader('Retry-After', retryAfter.toString());
-    return response.status(429).json({
-      error: 'Rate limit exceeded',
-      details: `Please wait ${retryAfter} seconds before trying again`,
-      retryAfter
-    });
-  }
-
   try {
+    // Get client IP for rate limiting
+    const ip = request.headers['x-forwarded-for'] || 
+               request.headers['x-real-ip'] || 
+               'unknown-ip';
+    
+    // Check rate limit
+    const clientIp = Array.isArray(ip) ? ip[0] : ip;
+    const rateLimit = isRateLimited(clientIp as string);
+    
+    if (rateLimit.limited) {
+      console.log(`Rate limited IP: ${clientIp}, retry after: ${rateLimit.retryAfter}s`);
+      return response.status(429).json({
+        error: 'Rate limit exceeded',
+        details: `Please wait ${rateLimit.retryAfter} seconds before trying again`,
+        retryAfter: rateLimit.retryAfter
+      });
+    }
+
     // Check for API key in different environment variable names
     const apiKey = process.env.ROUTER_API_KEY || process.env.VITE_ROUTER_API_KEY;
     
@@ -98,19 +133,21 @@ export default async function handler(
 
       clearTimeout(timeout);
 
-      // Handle upstream rate limiting
+      // Handle rate limiting from the upstream API
       if (apiResponse.status === 429) {
         const retryAfter = apiResponse.headers.get('Retry-After') || '60';
-        // Remove the rate limit count for this request since it failed
-        const windowData = requestCounts.get(clientIp);
-        if (windowData) {
-          windowData.count = Math.max(0, windowData.count - 1);
-          requestCounts.set(clientIp, windowData);
-        }
+        const retrySeconds = parseInt(retryAfter);
+        
+        // Update our rate limit store to enforce upstream rate limits as well
+        rateLimitStore[clientIp as string] = {
+          count: RATE_LIMIT.requestsPerMinute + 2, // Force a penalty
+          resetAt: Date.now() + (retrySeconds * 1000)
+        };
+        
         return response.status(429).json({
           error: 'Rate limit exceeded',
-          details: `Please wait ${retryAfter} seconds before trying again`,
-          retryAfter: parseInt(retryAfter)
+          details: `Please wait ${retrySeconds} seconds before trying again`,
+          retryAfter: retrySeconds
         });
       }
 

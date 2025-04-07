@@ -15,5 +15,15 @@
       "src": "/[^.]+",
       "dest": "/index.html"
     }
-  ]
+  ],
+  "crons": [],
+  "functions": {
+    "api/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  },
+  "env": {
+    "ROUTER_API_KEY": "@router_api_key"
+  }
 } 

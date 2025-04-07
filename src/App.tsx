@@ -10,6 +10,9 @@ import HowItWorks from '@/components/HowItWorks';
 import DeveloperProfile from '@/components/DeveloperProfile';
 import { TextShimmerWave } from '@/components/ui/text-shimmer-wave';
 
+// LocalStorage key for rate limit info
+const RATE_LIMIT_KEY = 'solvex_rate_limit_until';
+
 function App() {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
@@ -18,6 +21,24 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [waitTime, setWaitTime] = useState<number>(0);
 
+  // Initialize wait time from localStorage on component mount
+  useEffect(() => {
+    const storedRateLimitUntil = localStorage.getItem(RATE_LIMIT_KEY);
+    if (storedRateLimitUntil) {
+      const rateLimitUntil = parseInt(storedRateLimitUntil);
+      const now = Date.now();
+      
+      if (rateLimitUntil > now) {
+        const remainingSeconds = Math.ceil((rateLimitUntil - now) / 1000);
+        setWaitTime(remainingSeconds);
+        setError(`Rate limit exceeded. Please wait ${remainingSeconds} seconds.`);
+      } else {
+        // Clear expired rate limit
+        localStorage.removeItem(RATE_LIMIT_KEY);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (waitTime <= 0) return;
 
@@ -25,6 +46,7 @@ function App() {
       setWaitTime(time => {
         if (time <= 1) {
           setError(null);
+          localStorage.removeItem(RATE_LIMIT_KEY);
           return 0;
         }
         return time - 1;
@@ -67,7 +89,7 @@ function App() {
     setError(null);
     
     try {
-      const maxRetries = 3;
+      const maxRetries = 2; // Reduced from 3 to 2 to avoid triggering additional rate limits
       let retries = 0;
       let success = false;
       let responseData;
@@ -102,39 +124,33 @@ function App() {
 
           if (response.status === 429) {
             const retryAfter = data.retryAfter || 60;
+            
+            // Store rate limit info in localStorage with timestamp
+            const rateLimitUntil = Date.now() + (retryAfter * 1000);
+            localStorage.setItem(RATE_LIMIT_KEY, rateLimitUntil.toString());
+            
             setWaitTime(retryAfter);
-            setError(`Rate limit exceeded. Please wait ${retryAfter} seconds before trying again.`);
             throw new Error(`Rate limit exceeded. Please wait ${retryAfter} seconds.`);
           }
 
           if (!response.ok) {
-            if (response.status === 503 || response.status === 504) {
-              // For timeout or service unavailable, retry
-              throw new Error(data.details || data.error || `Service temporarily unavailable`);
-            }
-            // For other errors, don't retry
-            setError(data.details || data.error || `Request failed with status ${response.status}`);
-            return;
+            throw new Error(data.details || data.error || `HTTP error! status: ${response.status}`);
           }
 
           responseData = data;
           success = true;
-        } catch (retryError: unknown) {
+        } catch (retryError) {
           console.error('Request failed:', retryError);
           
-          // Don't retry rate limit errors
-          if (retryError instanceof Error && retryError.message.includes('Rate limit exceeded')) {
+          // Don't retry on rate limit errors, they'll only make things worse
+          if (retryError instanceof Error && retryError.message.includes('Rate limit')) {
             throw retryError;
           }
           
-          if (retries >= maxRetries - 1) {
-            throw retryError;
-          }
-          
+          if (retries >= maxRetries - 1) throw retryError;
           retries++;
           console.log(`Retrying... Attempt ${retries + 1} of ${maxRetries}`);
-          // Exponential backoff
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retries) * 1000));
+          await sleep(1000 * retries);
         }
       }
 
@@ -143,13 +159,12 @@ function App() {
           throw new Error('Invalid response format from API');
         }
         setAnswer(responseData.choices[0].message.content);
-        setError(null); // Clear any previous errors on success
       }
     } catch (error) {
       console.error('Final error:', error);
       if (error instanceof Error) {
         if (error.message.includes('Rate limit')) {
-          // Error message already set by rate limit handler
+          setError('Too many requests. Please wait until the countdown completes.');
         } else if (error.message.includes('API key not configured')) {
           setError('The service is temporarily unavailable. Please try again later or contact support.');
         } else if (error.message.includes('Invalid response format')) {
@@ -161,9 +176,7 @@ function App() {
         setError('An unexpected error occurred. Please try again later.');
       }
     } finally {
-      if (!error?.includes('Rate limit exceeded')) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   };
 
@@ -214,20 +227,17 @@ function App() {
       className="button-54"
     >
       {loading ? (
-        <div className="flex items-center gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          Processing...
-        </div>
+        <Loader2 className="w-5 h-5 animate-spin" />
       ) : waitTime > 0 ? (
-        <div className="flex items-center gap-2">
+        <>
           <Loader2 className="w-5 h-5" />
           Wait {waitTime}s
-        </div>
+        </>
       ) : (
-        <div className="flex items-center gap-2">
+        <>
           <Send className="w-5 h-5" />
           Get answer
-        </div>
+        </>
       )}
     </button>
   );
