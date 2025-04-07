@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { checkRateLimit } from './middleware/rateLimit';
 
 export default async function handler(
   request: VercelRequest,
@@ -21,6 +22,18 @@ export default async function handler(
   // Only allow POST requests
   if (request.method !== 'POST') {
     return response.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Check rate limit
+  const rateLimitCheck = checkRateLimit(request);
+  if (rateLimitCheck.limited) {
+    const retryAfter = Math.ceil((rateLimitCheck.resetTime! - Date.now()) / 1000);
+    response.setHeader('Retry-After', retryAfter.toString());
+    return response.status(429).json({
+      error: 'Rate limit exceeded',
+      details: `Please wait ${retryAfter} seconds before trying again`,
+      retryAfter
+    });
   }
 
   try {
@@ -64,10 +77,12 @@ export default async function handler(
         
         // Handle rate limiting specifically
         if (apiResponse.status === 429) {
+          const retryAfter = parseInt(apiResponse.headers.get('retry-after') || '30');
+          response.setHeader('Retry-After', retryAfter.toString());
           return response.status(429).json({
             error: 'Rate limit exceeded',
-            details: 'Please wait a moment before trying again',
-            retryAfter: apiResponse.headers.get('retry-after') || '30'
+            details: `Please wait ${retryAfter} seconds before trying again`,
+            retryAfter
           });
         }
         
