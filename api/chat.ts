@@ -71,13 +71,16 @@ export default async function handler(
           data: data
         });
 
-        // For rate limit responses, use a shorter wait time
+        // For rate limit responses, get retry time from headers or use dynamic fallback
         if (apiResponse.status === 429) {
-          const retryAfter = 5; // Fixed 5-second retry for rate limits
+          const retryAfter = parseInt(apiResponse.headers.get('retry-after') || '0', 10);
+          const dynamicRetry = Math.min(retryAfter || Math.floor(Math.random() * 3) + 2, 5);
+          
           return response.status(429).json({
             error: 'Rate limit exceeded',
-            details: `Please wait ${retryAfter} seconds before trying again`,
-            retryAfter
+            details: `Please wait ${dynamicRetry} seconds before trying again`,
+            retryAfter: dynamicRetry,
+            isRateLimit: true
           });
         }
         

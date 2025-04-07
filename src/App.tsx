@@ -96,9 +96,10 @@ function App() {
 
           if (!response.ok) {
             if (response.status === 429) {
-              const retryAfterSeconds = data.retryAfter || 5;
+              const retryAfterSeconds = data.retryAfter || 3;
               setRetryAfter(retryAfterSeconds);
               setCountdown(retryAfterSeconds);
+              setError(`Please wait ${retryAfterSeconds} seconds before trying again. The AI needs a moment to catch up.`);
               throw new Error(`Rate limit exceeded. Please wait ${retryAfterSeconds} seconds.`);
             }
             throw new Error(data.details || data.error || `HTTP error! status: ${response.status}`);
@@ -149,12 +150,20 @@ function App() {
     }
   };
 
-  // Update the button to show countdown
+  // Update the button to show countdown and status
   const buttonText = countdown 
-    ? `Wait ${countdown}s...` 
+    ? `Please wait ${countdown}s...` 
     : loading 
-      ? 'Generating...' 
+      ? 'Generating response...' 
       : 'Get answer';
+
+  const buttonIcon = loading ? (
+    <Loader2 className="w-5 h-5 animate-spin" />
+  ) : countdown ? (
+    <Brain className="w-5 h-5" />
+  ) : (
+    <Send className="w-5 h-5" />
+  );
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] relative">
@@ -236,14 +245,8 @@ function App() {
                   disabled={loading || !question.trim() || countdown !== null}
                   className="button-54"
                 >
-                  {loading ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>
-                      <Send className="w-5 h-5" />
-                      {buttonText}
-                    </>
-                  )}
+                  {buttonIcon}
+                  {buttonText}
                 </button>
               </div>
 
