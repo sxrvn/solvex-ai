@@ -61,7 +61,7 @@ function App() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim() || loading || waitTime > 0) return;
+    if (!question.trim() || loading) return;
 
     setLoading(true);
     setError(null);
@@ -92,17 +92,12 @@ function App() {
       const data = await response.json();
 
       if (!response.ok) {
-        if (response.status === 429) {
-          const retryAfter = data.retryAfter || 60;
-          setWaitTime(retryAfter);
-          throw new Error(data.details || `Rate limit exceeded. Please wait ${retryAfter} seconds.`);
-        }
         throw new Error(data.details || data.error || 'Failed to get response');
       }
 
       setAnswer(data.choices[0].message.content);
     } catch (error) {
-      console.error('Final error:', error);
+      console.error('Error:', error);
       setError(error instanceof Error ? error.message : 'An unexpected error occurred');
     } finally {
       setLoading(false);
@@ -152,16 +147,11 @@ function App() {
   const renderSubmitButton = () => (
     <button
       type="submit"
-      disabled={loading || !question.trim() || waitTime > 0}
+      disabled={loading || !question.trim()}
       className="button-54"
     >
       {loading ? (
         <Loader2 className="w-5 h-5 animate-spin" />
-      ) : waitTime > 0 ? (
-        <>
-          <Loader2 className="w-5 h-5" />
-          Wait {waitTime}s
-        </>
       ) : (
         <>
           <Send className="w-5 h-5" />

@@ -1,12 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { OpenAI } from 'openai';
-import { RateLimiter } from '@/lib/rateLimiter';
-
-// Initialize rate limiter
-const rateLimiter = new RateLimiter({
-  windowMs: 60 * 1000, // 1 minute window
-  maxRequests: 5 // 5 requests per window
-});
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -48,18 +41,6 @@ export default async function handler(
       return response.status(500).json({
         error: 'Server configuration error',
         details: 'API key not configured'
-      });
-    }
-
-    // Check rate limit
-    const clientIp = request.headers['x-forwarded-for'] || request.socket.remoteAddress;
-    const rateLimitResult = await rateLimiter.checkRateLimit(clientIp as string);
-    
-    if (!rateLimitResult.allowed) {
-      return response.status(429).json({
-        error: 'Rate limit exceeded',
-        details: `Please wait ${Math.ceil(rateLimitResult.timeToReset / 1000)} seconds`,
-        retryAfter: Math.ceil(rateLimitResult.timeToReset / 1000)
       });
     }
 
