@@ -47,63 +47,34 @@ function App() {
     setError(null);
     
     try {
-      const maxRetries = 3;
-      let retries = 0;
-      let success = false;
-      let responseData;
-      
-      while (retries < maxRetries && !success) {
-        try {
-          const response = await fetch('https://router.requesty.ai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${import.meta.env.VITE_ROUTER_API_KEY}`
-            },
-            body: JSON.stringify({
-              model: "google/gemini-2.5-pro-exp-03-25",
-              messages: [{
-                role: "user",
-                content: image ? [
-                  { type: "text", text: question },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:image/jpeg;base64,${image}`
-                    }
-                  }
-                ] : question
-              }]
-            })
-          });
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-pro-exp-03-25",
+          messages: [{
+            role: "user",
+            content: image ? [
+              { type: "text", text: question },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${image}`
+                }
+              }
+            ] : question
+          }]
+        })
+      });
 
-          if (response.status === 429) {
-            retries++;
-            if (retries < maxRetries) {
-              // Wait longer between each retry
-              await sleep(1000 * retries);
-              continue;
-            } else {
-              throw new Error("Rate limit exceeded. Please try again later.");
-            }
-          }
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
-          responseData = await response.json();
-          success = true;
-        } catch (retryError) {
-          if (retries >= maxRetries - 1) throw retryError;
-          retries++;
-          await sleep(1000 * retries);
-        }
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      if (success && responseData) {
-        setAnswer(responseData.choices[0].message.content);
-      }
+      const responseData = await response.json();
+      setAnswer(responseData.choices[0].message.content);
     } catch (error) {
       console.error('Error:', error);
       if (error instanceof Error) {

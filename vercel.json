@@ -3,10 +3,18 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "routes": [
+    { 
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    },
     {
-      "src": "/[^.]+",
-      "dest": "/",
-      "status": 200
+      "source": "/(.*)",
+      "destination": "/"
     }
-  ]
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "edge"
+    }
+  }
 } 
