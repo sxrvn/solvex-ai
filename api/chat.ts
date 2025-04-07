@@ -57,9 +57,10 @@ export default async function handler(
     // Create completion with timeout
     const timeoutMs = 30000;
     const completionPromise = openai.chat.completions.create({
-      model: "google/gemini-2.5-pro-exp-03-25",
+      model: "google/gemini-2.5-pro-exp-03-25:free",
       messages: messages,
-      timeout: timeoutMs
+      timeout: timeoutMs,
+      stream: false
     });
 
     // Add timeout
@@ -93,6 +94,14 @@ export default async function handler(
         error: 'Rate limit exceeded',
         details: 'OpenRouter API rate limit exceeded. Please try again later.',
         retryAfter: 60
+      });
+    }
+
+    // Handle model not found error
+    if (error.message?.includes('No endpoints found')) {
+      return response.status(400).json({
+        error: 'Model not available',
+        details: 'The requested model is not available. Please try again later or contact support.'
       });
     }
 
