@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { checkRateLimit } from './middleware/rateLimit';
 
 export default async function handler(
   request: VercelRequest,
@@ -22,18 +21,6 @@ export default async function handler(
   // Only allow POST requests
   if (request.method !== 'POST') {
     return response.status(405).json({ error: 'Method not allowed' });
-  }
-
-  // Check rate limit
-  const rateLimitCheck = checkRateLimit(request);
-  if (rateLimitCheck.limited) {
-    const retryAfter = Math.ceil((rateLimitCheck.resetTime! - Date.now()) / 1000);
-    response.setHeader('Retry-After', retryAfter.toString());
-    return response.status(429).json({
-      error: 'Rate limit exceeded',
-      details: `Please wait ${retryAfter} seconds before trying again`,
-      retryAfter
-    });
   }
 
   try {
@@ -67,24 +54,32 @@ export default async function handler(
 
       clearTimeout(timeout);
 
-      const data = await apiResponse.json();
+      // Handle rate limiting
+      if (apiResponse.status === 429) {
+        const retryAfter = apiResponse.headers.get('Retry-After') || '60';
+        return response.status(429).json({
+          error: 'Rate limit exceeded',
+          details: `Please wait ${retryAfter} seconds before trying again`,
+          retryAfter: parseInt(retryAfter)
+        });
+      }
+
+      let data;
+      try {
+        data = await apiResponse.json();
+      } catch (parseError) {
+        console.error('Failed to parse API response:', parseError);
+        return response.status(500).json({
+          error: 'Invalid API response',
+          details: 'Failed to parse API response'
+        });
+      }
 
       if (!apiResponse.ok) {
         console.error('API Error Response:', {
           status: apiResponse.status,
           data: data
         });
-        
-        // Handle rate limiting specifically
-        if (apiResponse.status === 429) {
-          const retryAfter = parseInt(apiResponse.headers.get('retry-after') || '30');
-          response.setHeader('Retry-After', retryAfter.toString());
-          return response.status(429).json({
-            error: 'Rate limit exceeded',
-            details: `Please wait ${retryAfter} seconds before trying again`,
-            retryAfter
-          });
-        }
         
         return response.status(apiResponse.status).json({
           error: 'API request failed',
@@ -96,17 +91,16 @@ export default async function handler(
       return response.status(200).json(data);
     } catch (fetchError) {
       clearTimeout(timeout);
+      if (fetchError.name === 'AbortError') {
+        return response.status(504).json({
+          error: 'Request timeout',
+          details: 'The request took too long to complete'
+        });
+      }
       throw fetchError;
     }
   } catch (error) {
     console.error('Server Error:', error);
-    
-    if (error.name === 'AbortError') {
-      return response.status(504).json({
-        error: 'Request timeout',
-        details: 'The request took too long to complete'
-      });
-    }
     
     return response.status(500).json({
       error: 'Failed to process request',

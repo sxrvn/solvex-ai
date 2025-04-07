@@ -268,7 +268,7 @@ function App() {
                   <div className="latex-wrapper">
                     <style>{`
                       .latex-wrapper {
-                        font-family: 'Computer Modern', 'Latin Modern', 'Cambria Math', 'Times New Roman', serif;
+                        font-family: 'Latin Modern Roman', 'Computer Modern', 'Cambria Math', 'Times New Roman', serif;
                         line-height: 1.6;
                       }
                       .latex-wrapper p {
@@ -276,7 +276,7 @@ function App() {
                         text-align: justify;
                       }
                       .latex-wrapper h1, .latex-wrapper h2, .latex-wrapper h3 {
-                        font-family: 'Computer Modern', 'Latin Modern', 'Arial', sans-serif;
+                        font-family: 'Latin Modern Roman', 'Computer Modern', 'Arial', sans-serif;
                         margin: 1.5em 0 1em;
                         color: #1a1a1a;
                       }
@@ -328,29 +328,37 @@ function App() {
                         font-weight: 600;
                       }
                       @font-face {
-                        font-family: 'Computer Modern';
-                        src: url('https://cdn.rawgit.com/dreampulse/computer-modern-web-font/master/fonts/Serif/cmunrm.woff') format('woff');
+                        font-family: 'Latin Modern Roman';
+                        src: url('https://raw.githubusercontent.com/vincentdoerig/latex-css/master/fonts/LM-Roman-10-Regular.woff2') format('woff2'),
+                             url('https://raw.githubusercontent.com/vincentdoerig/latex-css/master/fonts/LM-Roman-10-Regular.woff') format('woff');
                         font-weight: normal;
                         font-style: normal;
                         font-display: swap;
                       }
                       @font-face {
-                        font-family: 'Computer Modern';
-                        src: url('https://cdn.rawgit.com/dreampulse/computer-modern-web-font/master/fonts/Serif/cmunbx.woff') format('woff');
+                        font-family: 'Latin Modern Roman';
+                        src: url('https://raw.githubusercontent.com/vincentdoerig/latex-css/master/fonts/LM-Roman-10-Bold.woff2') format('woff2'),
+                             url('https://raw.githubusercontent.com/vincentdoerig/latex-css/master/fonts/LM-Roman-10-Bold.woff') format('woff');
                         font-weight: bold;
                         font-style: normal;
                         font-display: swap;
                       }
                       @font-face {
-                        font-family: 'Computer Modern';
-                        src: url('https://cdn.rawgit.com/dreampulse/computer-modern-web-font/master/fonts/Serif/cmunti.woff') format('woff');
+                        font-family: 'Latin Modern Roman';
+                        src: url('https://raw.githubusercontent.com/vincentdoerig/latex-css/master/fonts/LM-Roman-10-Italic.woff2') format('woff2'),
+                             url('https://raw.githubusercontent.com/vincentdoerig/latex-css/master/fonts/LM-Roman-10-Italic.woff') format('woff');
                         font-weight: normal;
                         font-style: italic;
                         font-display: swap;
                       }
-                      /* Fallback font while loading */
-                      .latex-wrapper {
-                        font-family: 'Computer Modern', 'Times New Roman', serif;
+                      .katex-display > .katex {
+                        max-width: 100%;
+                        overflow-x: auto;
+                        overflow-y: hidden;
+                        padding: 0.5em 0;
+                      }
+                      .katex-inline {
+                        padding: 0 0.15em;
                       }
                     `}</style>
                     <ReactMarkdown
