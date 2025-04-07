@@ -70,10 +70,15 @@ export default async function handler(
 
     const completion = await Promise.race([completionPromise, timeoutPromise]);
 
+    // Check if completion and its properties exist
+    if (!completion || !completion.choices || !completion.choices[0] || !completion.choices[0].message) {
+      throw new Error('Invalid response from OpenRouter API');
+    }
+
     return response.status(200).json({
       choices: [{
         message: {
-          content: completion.choices[0].message.content
+          content: completion.choices[0].message.content || ''
         }
       }]
     });
@@ -102,6 +107,14 @@ export default async function handler(
       return response.status(400).json({
         error: 'Model not available',
         details: 'The requested model is not available. Please try again later or contact support.'
+      });
+    }
+
+    // Handle invalid response error
+    if (error.message?.includes('Invalid response')) {
+      return response.status(502).json({
+        error: 'Bad Gateway',
+        details: 'Received an invalid response from the AI service. Please try again.'
       });
     }
 
