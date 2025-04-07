@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -16,6 +16,20 @@ function App() {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryAfter, setRetryAfter] = useState<number | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (countdown !== null && countdown > 0) {
+      timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+    } else if (countdown === 0) {
+      setError(null);
+      setCountdown(null);
+      setRetryAfter(null);
+    }
+    return () => clearTimeout(timer);
+  }, [countdown]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -41,7 +55,7 @@ function App() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim()) return;
+    if (!question.trim() || countdown !== null) return;
 
     setLoading(true);
     setError(null);
@@ -81,14 +95,22 @@ function App() {
           console.log('API Response:', { status: response.status, data });
 
           if (!response.ok) {
-            const errorMessage = data.details || data.error || `HTTP error! status: ${response.status}`;
-            throw new Error(errorMessage);
+            if (response.status === 429) {
+              const retryAfterSeconds = data.retryAfter || 10;
+              setRetryAfter(retryAfterSeconds);
+              setCountdown(retryAfterSeconds);
+              throw new Error(`Rate limit exceeded. Please wait ${retryAfterSeconds} seconds.`);
+            }
+            throw new Error(data.details || data.error || `HTTP error! status: ${response.status}`);
           }
 
           responseData = data;
           success = true;
         } catch (retryError) {
           console.error('Request failed:', retryError);
+          if (retryError instanceof Error && retryError.message.includes('Rate limit')) {
+            throw retryError; // Don't retry rate limit errors
+          }
           if (retries >= maxRetries - 1) throw retryError;
           retries++;
           console.log(`Retrying... Attempt ${retries + 1} of ${maxRetries}`);
@@ -105,10 +127,10 @@ function App() {
     } catch (error) {
       console.error('Final error:', error);
       if (error instanceof Error) {
-        if (error.message.includes('API key not configured')) {
+        if (error.message.includes('Rate limit')) {
+          setError(`Too many requests. ${countdown ? `Please wait ${countdown} seconds.` : 'Please try again later.'}`);
+        } else if (error.message.includes('API key not configured')) {
           setError('The service is temporarily unavailable. Please try again later or contact support.');
-        } else if (error.message.includes('429') || error.message.includes('Rate limit')) {
-          setError('Too many requests. Please wait a moment before trying again.');
         } else if (error.message.includes('Invalid response format')) {
           setError('Received an invalid response from the server. Please try again.');
         } else {
@@ -121,6 +143,13 @@ function App() {
       setLoading(false);
     }
   };
+
+  // Update the button to show countdown
+  const buttonText = countdown 
+    ? `Wait ${countdown}s...` 
+    : loading 
+      ? 'Generating...' 
+      : 'Get answer';
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] relative">
@@ -199,7 +228,7 @@ function App() {
                 `}</style>
                 <button
                   type="submit"
-                  disabled={loading || !question.trim()}
+                  disabled={loading || !question.trim() || countdown !== null}
                   className="button-54"
                 >
                   {loading ? (
@@ -207,7 +236,7 @@ function App() {
                   ) : (
                     <>
                       <Send className="w-5 h-5" />
-                      Get answer
+                      {buttonText}
                     </>
                   )}
                 </button>
