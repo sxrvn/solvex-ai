@@ -54,22 +54,31 @@ function App() {
       
       while (retries < maxRetries && !success) {
         try {
-          // Using a relative URL to call our own API endpoint instead of directly calling the external API
-          const response = await fetch('/api/generate', {
+          const response = await fetch('/api/chat', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              question,
-              image: image || null
+              model: "google/gemini-2.5-pro-exp-03-25",
+              messages: [{
+                role: "user",
+                content: image ? [
+                  { type: "text", text: question },
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: `data:image/jpeg;base64,${image}`
+                    }
+                  }
+                ] : question
+              }]
             })
           });
 
           if (response.status === 429) {
             retries++;
             if (retries < maxRetries) {
-              // Wait longer between each retry
               await sleep(1000 * retries);
               continue;
             } else {
@@ -78,7 +87,8 @@ function App() {
           }
 
           if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errorData = await response.json();
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
           }
 
           responseData = await response.json();
@@ -91,13 +101,13 @@ function App() {
       }
 
       if (success && responseData) {
-        setAnswer(responseData.content);
+        setAnswer(responseData.choices[0].message.content);
       }
     } catch (error) {
       console.error('Error:', error);
       if (error instanceof Error) {
         if (error.message.includes('429') || error.message.includes('Rate limit')) {
-          setError('Too many requests. Please wait a moment before trying again.');
+          setError('Too many requests. Please wait a moment before trying again or reload the page.');
         } else {
           setError(`Failed to process your request: ${error.message}`);
         }
