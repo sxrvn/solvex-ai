@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Brain, Image as ImageIcon, Loader2, Send } from 'lucide-react';
+import { Brain, Image as ImageIcon, Loader2, Send, X } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { Hero } from '@/components/ui/animated-hero';
 import HowItWorks from '@/components/HowItWorks';
@@ -16,20 +16,23 @@ function App() {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [retryAfter, setRetryAfter] = useState<number | null>(null);
-  const [countdown, setCountdown] = useState<number | null>(null);
+  const [waitTime, setWaitTime] = useState<number>(0);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (countdown !== null && countdown > 0) {
-      timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-    } else if (countdown === 0) {
-      setError(null);
-      setCountdown(null);
-      setRetryAfter(null);
-    }
-    return () => clearTimeout(timer);
-  }, [countdown]);
+    if (waitTime <= 0) return;
+
+    const timer = setInterval(() => {
+      setWaitTime(time => {
+        if (time <= 1) {
+          setError(null);
+          return 0;
+        }
+        return time - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [waitTime]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -37,13 +40,16 @@ function App() {
       const reader = new FileReader();
       reader.onload = (e) => {
         const base64Data = e.target?.result as string;
-        // Remove the data URL prefix to get just the base64 data
         const base64Image = base64Data.split(',')[1];
         setImage(base64Image);
       };
       reader.readAsDataURL(file);
     }
   }, []);
+
+  const removeImage = () => {
+    setImage(null);
+  };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -55,13 +61,13 @@ function App() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim() || countdown !== null) return;
+    if (!question.trim() || loading || waitTime > 0) return;
 
     setLoading(true);
     setError(null);
     
     try {
-      const maxRetries = 2;
+      const maxRetries = 3;
       let retries = 0;
       let success = false;
       let responseData;
@@ -94,14 +100,13 @@ function App() {
           const data = await response.json();
           console.log('API Response:', { status: response.status, data });
 
+          if (response.status === 429) {
+            const retryAfter = data.retryAfter || 60;
+            setWaitTime(retryAfter);
+            throw new Error(`Rate limit exceeded. Please wait ${retryAfter} seconds.`);
+          }
+
           if (!response.ok) {
-            if (response.status === 429) {
-              const retryAfterSeconds = data.retryAfter || 3;
-              setRetryAfter(retryAfterSeconds);
-              setCountdown(retryAfterSeconds);
-              setError(`Please wait ${retryAfterSeconds} seconds before trying again. The AI needs a moment to catch up.`);
-              throw new Error(`Rate limit exceeded. Please wait ${retryAfterSeconds} seconds.`);
-            }
             throw new Error(data.details || data.error || `HTTP error! status: ${response.status}`);
           }
 
@@ -109,16 +114,10 @@ function App() {
           success = true;
         } catch (retryError) {
           console.error('Request failed:', retryError);
-          if (retryError instanceof Error && 
-             (retryError.message.includes('Rate limit') || 
-              retryError.message.includes('timeout'))) {
-            throw retryError; // Don't retry rate limit or timeout errors
-          }
           if (retries >= maxRetries - 1) throw retryError;
           retries++;
-          const backoffTime = Math.min(1000 * Math.pow(2, retries), 4000); // Exponential backoff with max 4s
-          console.log(`Retrying in ${backoffTime/1000}s... Attempt ${retries + 1} of ${maxRetries}`);
-          await sleep(backoffTime);
+          console.log(`Retrying... Attempt ${retries + 1} of ${maxRetries}`);
+          await sleep(1000 * retries);
         }
       }
 
@@ -132,9 +131,7 @@ function App() {
       console.error('Final error:', error);
       if (error instanceof Error) {
         if (error.message.includes('Rate limit')) {
-          setError(`Too many requests. ${countdown ? `Please wait ${countdown} seconds.` : 'Please try again later.'}`);
-        } else if (error.message.includes('timeout')) {
-          setError('The request took too long. Please try again.');
+          setError('Too many requests. Please wait.');
         } else if (error.message.includes('API key not configured')) {
           setError('The service is temporarily unavailable. Please try again later or contact support.');
         } else if (error.message.includes('Invalid response format')) {
@@ -150,23 +147,113 @@ function App() {
     }
   };
 
-  // Update the button to show countdown and status
-  const buttonText = countdown 
-    ? `Please wait ${countdown}s...` 
-    : loading 
-      ? 'Generating response...' 
-      : 'Get answer';
+  const renderImageUpload = () => (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-gray-700">
+        Upload Image Box
+      </label>
+      <div
+        {...getRootProps()}
+        className={`relative border-2 border-dashed rounded-lg h-[calc(100%-2rem)] min-h-[200px] flex items-center justify-center
+          ${isDragActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-indigo-500'}`}
+      >
+        <input {...getInputProps()} />
+        {image ? (
+          <div className="flex flex-col items-center p-4 relative w-full h-full">
+            <img 
+              src={`data:image/jpeg;base64,${image}`} 
+              alt="Uploaded" 
+              className="max-h-32 mb-2 object-contain" 
+            />
+            <p className="text-sm text-gray-500 text-center">Click or drag to replace</p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                removeImage();
+              }}
+              className="absolute top-2 right-2 p-1 bg-red-100 hover:bg-red-200 rounded-full text-red-600 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center p-4">
+            <ImageIcon className="w-12 h-12 text-gray-400 mb-2" />
+            <p className="text-gray-500 text-center text-sm">Drag & drop an image here, or click to select</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
-  const buttonIcon = loading ? (
-    <Loader2 className="w-5 h-5 animate-spin" />
-  ) : countdown ? (
-    <Brain className="w-5 h-5" />
-  ) : (
-    <Send className="w-5 h-5" />
+  const renderSubmitButton = () => (
+    <button
+      type="submit"
+      disabled={loading || !question.trim() || waitTime > 0}
+      className="button-54"
+    >
+      {loading ? (
+        <Loader2 className="w-5 h-5 animate-spin" />
+      ) : waitTime > 0 ? (
+        <>
+          <Loader2 className="w-5 h-5" />
+          Wait {waitTime}s
+        </>
+      ) : (
+        <>
+          <Send className="w-5 h-5" />
+          Get answer
+        </>
+      )}
+    </button>
   );
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] relative">
+      <style>{`
+        .button-54 {
+          font-family: "Open Sans", sans-serif;
+          font-size: 16px;
+          letter-spacing: 2px;
+          text-decoration: none;
+          text-transform: uppercase;
+          color: #000;
+          cursor: pointer;
+          border: 3px solid;
+          padding: 0.25em 0.5em;
+          box-shadow: 1px 1px 0px 0px, 2px 2px 0px 0px, 3px 3px 0px 0px, 4px 4px 0px 0px, 5px 5px 0px 0px;
+          position: relative;
+          user-select: none;
+          -webkit-user-select: none;
+          touch-action: manipulation;
+          background: white;
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          transition: all 0.1s ease;
+        }
+
+        .button-54:active {
+          box-shadow: 0px 0px 0px 0px;
+          top: 5px;
+          left: 5px;
+        }
+
+        .button-54:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          box-shadow: none;
+        }
+
+        @media (min-width: 768px) {
+          .button-54 {
+            padding: 0.25em 0.75em;
+          }
+        }
+      `}</style>
       <div 
         className="absolute inset-0 w-full h-full"
         style={{
@@ -185,7 +272,6 @@ function App() {
         <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              {/* Question Box */}
               <div className="space-y-2">
                 <label htmlFor="question" className="block text-sm font-medium text-gray-700">
                   Your Question Box
@@ -197,87 +283,9 @@ function App() {
                   className="w-full h-40 px-3 py-2 border border-gray-300 rounded-lg hover:border-gray-600 focus:ring-2 focus:ring-black focus:border-black transition-colors duration-200 ease-in-out"
                   placeholder="Type or paste your question here..."
                 />
-                <style>{`
-                  .button-54 {
-                    font-family: "Open Sans", sans-serif;
-                    font-size: 16px;
-                    letter-spacing: 2px;
-                    text-decoration: none;
-                    text-transform: uppercase;
-                    color: #000;
-                    cursor: pointer;
-                    border: 3px solid;
-                    padding: 0.25em 0.5em;
-                    box-shadow: 1px 1px 0px 0px, 2px 2px 0px 0px, 3px 3px 0px 0px, 4px 4px 0px 0px, 5px 5px 0px 0px;
-                    position: relative;
-                    user-select: none;
-                    -webkit-user-select: none;
-                    touch-action: manipulation;
-                    background: white;
-                    width: 100%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 0.5rem;
-                    transition: all 0.1s ease;
-                  }
-
-                  .button-54:active {
-                    box-shadow: 0px 0px 0px 0px;
-                    top: 5px;
-                    left: 5px;
-                  }
-
-                  .button-54:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                    box-shadow: none;
-                  }
-
-                  @media (min-width: 768px) {
-                    .button-54 {
-                      padding: 0.25em 0.75em;
-                    }
-                  }
-                `}</style>
-                <button
-                  type="submit"
-                  disabled={loading || !question.trim() || countdown !== null}
-                  className="button-54"
-                >
-                  {buttonIcon}
-                  {buttonText}
-                </button>
+                {renderSubmitButton()}
               </div>
-
-              {/* Upload Image Box */}
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Upload Image Box
-                </label>
-                <div
-                  {...getRootProps()}
-                  className={`border-2 border-dashed rounded-lg h-[calc(100%-2rem)] min-h-[200px] flex items-center justify-center
-                    ${isDragActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-indigo-500'}`}
-                >
-                  <input {...getInputProps()} />
-                  {image ? (
-                    <div className="flex flex-col items-center p-4">
-                      <img 
-                        src={`data:image/jpeg;base64,${image}`} 
-                        alt="Uploaded" 
-                        className="max-h-32 mb-2 object-contain" 
-                      />
-                      <p className="text-sm text-gray-500 text-center">Click or drag to replace</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center p-4">
-                      <ImageIcon className="w-12 h-12 text-gray-400 mb-2" />
-                      <p className="text-gray-500 text-center text-sm">Drag & drop an image here, or click to select</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+              {renderImageUpload()}
             </div>
 
             {error && (
