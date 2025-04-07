@@ -1,5 +1,36 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+// Rate limiting configuration
+const RATE_LIMIT_WINDOW = 60000; // 1 minute in milliseconds
+const MAX_REQUESTS_PER_WINDOW = 5;
+const requestCounts = new Map<string, { count: number; timestamp: number }>();
+
+function getRateLimitInfo(ip: string): { isLimited: boolean; retryAfter: number } {
+  const now = Date.now();
+  const windowData = requestCounts.get(ip);
+
+  if (!windowData) {
+    requestCounts.set(ip, { count: 1, timestamp: now });
+    return { isLimited: false, retryAfter: 0 };
+  }
+
+  if (now - windowData.timestamp > RATE_LIMIT_WINDOW) {
+    // Reset window if it's expired
+    requestCounts.set(ip, { count: 1, timestamp: now });
+    return { isLimited: false, retryAfter: 0 };
+  }
+
+  if (windowData.count >= MAX_REQUESTS_PER_WINDOW) {
+    const retryAfter = Math.ceil((RATE_LIMIT_WINDOW - (now - windowData.timestamp)) / 1000);
+    return { isLimited: true, retryAfter };
+  }
+
+  // Increment request count
+  windowData.count += 1;
+  requestCounts.set(ip, windowData);
+  return { isLimited: false, retryAfter: 0 };
+}
+
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
@@ -21,6 +52,19 @@ export default async function handler(
   // Only allow POST requests
   if (request.method !== 'POST') {
     return response.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Check rate limit
+  const clientIp = request.headers['x-forwarded-for'] as string || 'unknown';
+  const { isLimited, retryAfter } = getRateLimitInfo(clientIp);
+  
+  if (isLimited) {
+    response.setHeader('Retry-After', retryAfter.toString());
+    return response.status(429).json({
+      error: 'Rate limit exceeded',
+      details: `Please wait ${retryAfter} seconds before trying again`,
+      retryAfter
+    });
   }
 
   try {
@@ -54,9 +98,15 @@ export default async function handler(
 
       clearTimeout(timeout);
 
-      // Handle rate limiting
+      // Handle upstream rate limiting
       if (apiResponse.status === 429) {
         const retryAfter = apiResponse.headers.get('Retry-After') || '60';
+        // Remove the rate limit count for this request since it failed
+        const windowData = requestCounts.get(clientIp);
+        if (windowData) {
+          windowData.count = Math.max(0, windowData.count - 1);
+          requestCounts.set(clientIp, windowData);
+        }
         return response.status(429).json({
           error: 'Rate limit exceeded',
           details: `Please wait ${retryAfter} seconds before trying again`,

@@ -103,21 +103,38 @@ function App() {
           if (response.status === 429) {
             const retryAfter = data.retryAfter || 60;
             setWaitTime(retryAfter);
+            setError(`Rate limit exceeded. Please wait ${retryAfter} seconds before trying again.`);
             throw new Error(`Rate limit exceeded. Please wait ${retryAfter} seconds.`);
           }
 
           if (!response.ok) {
-            throw new Error(data.details || data.error || `HTTP error! status: ${response.status}`);
+            if (response.status === 503 || response.status === 504) {
+              // For timeout or service unavailable, retry
+              throw new Error(data.details || data.error || `Service temporarily unavailable`);
+            }
+            // For other errors, don't retry
+            setError(data.details || data.error || `Request failed with status ${response.status}`);
+            return;
           }
 
           responseData = data;
           success = true;
-        } catch (retryError) {
+        } catch (retryError: unknown) {
           console.error('Request failed:', retryError);
-          if (retries >= maxRetries - 1) throw retryError;
+          
+          // Don't retry rate limit errors
+          if (retryError instanceof Error && retryError.message.includes('Rate limit exceeded')) {
+            throw retryError;
+          }
+          
+          if (retries >= maxRetries - 1) {
+            throw retryError;
+          }
+          
           retries++;
           console.log(`Retrying... Attempt ${retries + 1} of ${maxRetries}`);
-          await sleep(1000 * retries);
+          // Exponential backoff
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retries) * 1000));
         }
       }
 
@@ -126,12 +143,13 @@ function App() {
           throw new Error('Invalid response format from API');
         }
         setAnswer(responseData.choices[0].message.content);
+        setError(null); // Clear any previous errors on success
       }
     } catch (error) {
       console.error('Final error:', error);
       if (error instanceof Error) {
         if (error.message.includes('Rate limit')) {
-          setError('Too many requests. Please wait.');
+          // Error message already set by rate limit handler
         } else if (error.message.includes('API key not configured')) {
           setError('The service is temporarily unavailable. Please try again later or contact support.');
         } else if (error.message.includes('Invalid response format')) {
@@ -143,7 +161,9 @@ function App() {
         setError('An unexpected error occurred. Please try again later.');
       }
     } finally {
-      setLoading(false);
+      if (!error?.includes('Rate limit exceeded')) {
+        setLoading(false);
+      }
     }
   };
 
@@ -194,17 +214,20 @@ function App() {
       className="button-54"
     >
       {loading ? (
-        <Loader2 className="w-5 h-5 animate-spin" />
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Processing...
+        </div>
       ) : waitTime > 0 ? (
-        <>
+        <div className="flex items-center gap-2">
           <Loader2 className="w-5 h-5" />
           Wait {waitTime}s
-        </>
+        </div>
       ) : (
-        <>
+        <div className="flex items-center gap-2">
           <Send className="w-5 h-5" />
           Get answer
-        </>
+        </div>
       )}
     </button>
   );
