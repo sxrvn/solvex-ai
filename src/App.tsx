@@ -61,51 +61,79 @@ function App() {
     setError(null);
     
     try {
-      console.log('Attempting API request...');
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-pro-exp-03-25",
-          messages: [{
-            role: "user",
-            content: image ? [
-              { type: "text", text: question },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${image}`
-                }
-              }
-            ] : question
-          }]
-        })
-      });
+      const maxRetries = 2;
+      let retries = 0;
+      let success = false;
+      let responseData;
+      
+      while (retries < maxRetries && !success) {
+        try {
+          console.log('Attempting API request...');
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: "google/gemini-2.5-pro-exp-03-25",
+              messages: [{
+                role: "user",
+                content: image ? [
+                  { type: "text", text: question },
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: `data:image/jpeg;base64,${image}`
+                    }
+                  }
+                ] : question
+              }]
+            })
+          });
 
-      const data = await response.json();
-      console.log('API Response:', { status: response.status, data });
+          const data = await response.json();
+          console.log('API Response:', { status: response.status, data });
 
-      if (!response.ok) {
-        if (response.status === 429) {
-          const retryAfter = Math.min(data.retryAfter || 5, 5);
-          setRetryAfter(retryAfter);
-          setCountdown(retryAfter);
-          throw new Error('Please wait a moment before trying again.');
+          if (!response.ok) {
+            if (response.status === 429) {
+              const retryAfterSeconds = data.retryAfter || 5;
+              setRetryAfter(retryAfterSeconds);
+              setCountdown(retryAfterSeconds);
+              throw new Error(`Rate limit exceeded. Please wait ${retryAfterSeconds} seconds.`);
+            }
+            throw new Error(data.details || data.error || `HTTP error! status: ${response.status}`);
+          }
+
+          responseData = data;
+          success = true;
+        } catch (retryError) {
+          console.error('Request failed:', retryError);
+          if (retryError instanceof Error && 
+             (retryError.message.includes('Rate limit') || 
+              retryError.message.includes('timeout'))) {
+            throw retryError; // Don't retry rate limit or timeout errors
+          }
+          if (retries >= maxRetries - 1) throw retryError;
+          retries++;
+          const backoffTime = Math.min(1000 * Math.pow(2, retries), 4000); // Exponential backoff with max 4s
+          console.log(`Retrying in ${backoffTime/1000}s... Attempt ${retries + 1} of ${maxRetries}`);
+          await sleep(backoffTime);
         }
-        throw new Error(data.details || data.error || `HTTP error! status: ${response.status}`);
       }
 
-      if (!data.choices?.[0]?.message?.content) {
-        throw new Error('Invalid response format from API');
+      if (success && responseData) {
+        if (!responseData.choices?.[0]?.message?.content) {
+          throw new Error('Invalid response format from API');
+        }
+        setAnswer(responseData.choices[0].message.content);
       }
-      setAnswer(data.choices[0].message.content);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Final error:', error);
       if (error instanceof Error) {
-        if (error.message.includes('Please wait')) {
-          setError(`Too many requests. ${countdown ? `Please wait ${countdown} seconds.` : 'Please try again in a moment.'}`);
+        if (error.message.includes('Rate limit')) {
+          setError(`Too many requests. ${countdown ? `Please wait ${countdown} seconds.` : 'Please try again later.'}`);
+        } else if (error.message.includes('timeout')) {
+          setError('The request took too long. Please try again.');
         } else if (error.message.includes('API key not configured')) {
           setError('The service is temporarily unavailable. Please try again later or contact support.');
         } else if (error.message.includes('Invalid response format')) {

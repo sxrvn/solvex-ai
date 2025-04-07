@@ -65,21 +65,21 @@ export default async function handler(
         });
       }
 
-      // Handle rate limiting with a more user-friendly approach
-      if (apiResponse.status === 429) {
-        const retryAfter = Math.min(parseInt(apiResponse.headers.get('Retry-After') || '5'), 5);
-        return response.status(429).json({
-          error: 'Rate limit exceeded',
-          details: `Please wait a moment before trying again`,
-          retryAfter
-        });
-      }
-
       if (!apiResponse.ok) {
         console.error('API Error Response:', {
           status: apiResponse.status,
           data: data
         });
+
+        // For rate limit responses, use a shorter wait time
+        if (apiResponse.status === 429) {
+          const retryAfter = 5; // Fixed 5-second retry for rate limits
+          return response.status(429).json({
+            error: 'Rate limit exceeded',
+            details: `Please wait ${retryAfter} seconds before trying again`,
+            retryAfter
+          });
+        }
         
         return response.status(apiResponse.status).json({
           error: 'API request failed',
