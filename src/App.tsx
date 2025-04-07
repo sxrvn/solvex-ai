@@ -10,9 +10,6 @@ import HowItWorks from '@/components/HowItWorks';
 import DeveloperProfile from '@/components/DeveloperProfile';
 import { TextShimmerWave } from '@/components/ui/text-shimmer-wave';
 
-// LocalStorage key for rate limit info
-const RATE_LIMIT_KEY = 'solvex_rate_limit_until';
-
 function App() {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
@@ -21,24 +18,6 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [waitTime, setWaitTime] = useState<number>(0);
 
-  // Initialize wait time from localStorage on component mount
-  useEffect(() => {
-    const storedRateLimitUntil = localStorage.getItem(RATE_LIMIT_KEY);
-    if (storedRateLimitUntil) {
-      const rateLimitUntil = parseInt(storedRateLimitUntil);
-      const now = Date.now();
-      
-      if (rateLimitUntil > now) {
-        const remainingSeconds = Math.ceil((rateLimitUntil - now) / 1000);
-        setWaitTime(remainingSeconds);
-        setError(`Rate limit exceeded. Please wait ${remainingSeconds} seconds.`);
-      } else {
-        // Clear expired rate limit
-        localStorage.removeItem(RATE_LIMIT_KEY);
-      }
-    }
-  }, []);
-
   useEffect(() => {
     if (waitTime <= 0) return;
 
@@ -46,7 +25,6 @@ function App() {
       setWaitTime(time => {
         if (time <= 1) {
           setError(null);
-          localStorage.removeItem(RATE_LIMIT_KEY);
           return 0;
         }
         return time - 1;
@@ -87,94 +65,45 @@ function App() {
 
     setLoading(true);
     setError(null);
+    setAnswer('');
     
     try {
-      const maxRetries = 2; // Reduced from 3 to 2 to avoid triggering additional rate limits
-      let retries = 0;
-      let success = false;
-      let responseData;
-      
-      while (retries < maxRetries && !success) {
-        try {
-          console.log('Attempting API request...');
-          const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: "google/gemini-2.5-pro-exp-03-25",
-              messages: [{
-                role: "user",
-                content: image ? [
-                  { type: "text", text: question },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:image/jpeg;base64,${image}`
-                    }
-                  }
-                ] : question
-              }]
-            })
-          });
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{
+            role: "user",
+            content: image ? [
+              { type: "text", text: question },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${image}`
+                }
+              }
+            ] : question
+          }]
+        })
+      });
 
-          const data = await response.json();
-          console.log('API Response:', { status: response.status, data });
+      const data = await response.json();
 
-          if (response.status === 429) {
-            const retryAfter = data.retryAfter || 60;
-            
-            // Store rate limit info in localStorage with timestamp
-            const rateLimitUntil = Date.now() + (retryAfter * 1000);
-            localStorage.setItem(RATE_LIMIT_KEY, rateLimitUntil.toString());
-            
-            setWaitTime(retryAfter);
-            throw new Error(`Rate limit exceeded. Please wait ${retryAfter} seconds.`);
-          }
-
-          if (!response.ok) {
-            throw new Error(data.details || data.error || `HTTP error! status: ${response.status}`);
-          }
-
-          responseData = data;
-          success = true;
-        } catch (retryError) {
-          console.error('Request failed:', retryError);
-          
-          // Don't retry on rate limit errors, they'll only make things worse
-          if (retryError instanceof Error && retryError.message.includes('Rate limit')) {
-            throw retryError;
-          }
-          
-          if (retries >= maxRetries - 1) throw retryError;
-          retries++;
-          console.log(`Retrying... Attempt ${retries + 1} of ${maxRetries}`);
-          await sleep(1000 * retries);
+      if (!response.ok) {
+        if (response.status === 429) {
+          const retryAfter = data.retryAfter || 60;
+          setWaitTime(retryAfter);
+          throw new Error(data.details || `Rate limit exceeded. Please wait ${retryAfter} seconds.`);
         }
+        throw new Error(data.details || data.error || 'Failed to get response');
       }
 
-      if (success && responseData) {
-        if (!responseData.choices?.[0]?.message?.content) {
-          throw new Error('Invalid response format from API');
-        }
-        setAnswer(responseData.choices[0].message.content);
-      }
+      setAnswer(data.choices[0].message.content);
     } catch (error) {
       console.error('Final error:', error);
-      if (error instanceof Error) {
-        if (error.message.includes('Rate limit')) {
-          setError('Too many requests. Please wait until the countdown completes.');
-        } else if (error.message.includes('API key not configured')) {
-          setError('The service is temporarily unavailable. Please try again later or contact support.');
-        } else if (error.message.includes('Invalid response format')) {
-          setError('Received an invalid response from the server. Please try again.');
-        } else {
-          setError(`Error: ${error.message}`);
-        }
-      } else {
-        setError('An unexpected error occurred. Please try again later.');
-      }
+      setError(error instanceof Error ? error.message : 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }

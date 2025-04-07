@@ -6,7 +6,12 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "dest": "/api/$1",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+        "Access-Control-Allow-Headers": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
+      }
     },
     {
       "handle": "filesystem"
@@ -15,15 +20,5 @@
       "src": "/[^.]+",
       "dest": "/index.html"
     }
-  ],
-  "crons": [],
-  "functions": {
-    "api/**/*.ts": {
-      "memory": 1024,
-      "maxDuration": 10
-    }
-  },
-  "env": {
-    "ROUTER_API_KEY": "@router_api_key"
-  }
+  ]
 } 
