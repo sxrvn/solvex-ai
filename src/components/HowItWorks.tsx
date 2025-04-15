@@ -6,19 +6,19 @@ const HowItWorks: FC = () => {
       id: 1,
       title: 'Upload Your Homework',
       description: 'Enter your question or upload a picture of your assignment for Solvex AI Helper to analyze.',
-      image: '/1.png'
+      image: 'https://i.ibb.co/G3J68y66/1.png'
     },
     {
       id: 2,
       title: 'Click Generate',
       description: 'Click the Generate button and wait for Solvex AI to process your request and prepare the solution.',
-      image: '/2.png'
+      image: 'https://i.ibb.co/9kgdbB4S/2.png'
     },
     {
       id: 3,
       title: 'Receive Help and Explanation',
       description: 'Solvex AI will solve your doubts and provide a detailed explanation to help you understand the solution.',
-      image: '/3.png'
+      image: 'https://i.ibb.co/S7BLYbyL/3.png'
     }
   ];
 
